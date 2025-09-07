@@ -1,15 +1,27 @@
 package main
 
 import (
-	"fmt"
 	store "kvStore/internal"
+	wal "kvStore/internal"
+	"log"
 )
 
 func main() {
 	kv := store.CreateStore()
-
-	kv.Set("lang", "Go")
-	if v, ok := kv.Get("lang"); ok {
-		fmt.Println("Lang:", v)
+	w, err := wal.CreateLogFile("data")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer w.Close()
+	err = w.Recover(func(rec wal.LogFile) {
+		switch rec.Operation {
+		case wal.OpSet:
+			kv.Set(rec.Key, rec.Data)
+		case wal.OpDelete:
+			kv.Delete(rec.Key)
+		}
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
 }

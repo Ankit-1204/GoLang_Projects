@@ -99,3 +99,12 @@ func (w *Wal) Recover(apply func(LogFile)) error {
 	}
 	return nil
 }
+
+func (w *Wal) Close() error {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	if w.file != nil {
+		w.file.Close()
+	}
+	return nil
+}

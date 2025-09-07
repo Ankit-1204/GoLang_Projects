@@ -31,7 +31,7 @@ func (s *store) Delete(key string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if _, ok := s.mp[key]; !ok {
-		return errors.New("Key not found")
+		return errors.New("key not found")
 	}
 	delete(s.mp, key)
 	return nil
