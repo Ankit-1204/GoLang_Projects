@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"sync"
 )
 
@@ -29,6 +30,9 @@ func (s *store) Set(key string, value interface{}) {
 func (s *store) Delete(key string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	if _, ok := s.mp[key]; !ok {
+		return errors.New("Key not found")
+	}
 	delete(s.mp, key)
 	return nil
 }
