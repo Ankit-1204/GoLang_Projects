@@ -7,21 +7,25 @@ import (
 )
 
 type Task struct {
-	id          int
-	topic       string
-	status      string
-	data        []byte
-	createdTime time.Time
+	Topic       string
+	Status      string
+	Data        []byte
+	CreatedTime time.Time
 }
 
 type Consumer struct {
-	con   net.Conn
-	topic string
+	Con   net.Conn
+	Topic string
 }
 type Queue struct {
-	id      int
-	mu      sync.Mutex
+	Id      string
+	Mu      sync.Mutex
 	Consu   []*Consumer
 	Message []Task
-	topic   string
+	Topic   string
+}
+
+type Incoming struct {
+	Topic string
+	Data  []byte
 }
