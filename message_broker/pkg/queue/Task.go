@@ -3,14 +3,12 @@ package queue
 import (
 	"net"
 	"sync"
-	"time"
 )
 
 type Task struct {
-	Topic       string
-	Status      string
-	Data        []byte
-	CreatedTime time.Time
+	Topic  string
+	Status string
+	Data   []byte
 }
 
 type Consumer struct {
@@ -20,8 +18,8 @@ type Consumer struct {
 type Queue struct {
 	Id      string
 	Mu      sync.Mutex
-	Consu   []*Consumer
-	Message []Task
+	Consu   *Consumer
+	Message []*Task
 	Topic   string
 }
 
