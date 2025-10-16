@@ -63,7 +63,7 @@ func (c *Coordinator) Subscribe(topic string, subListener net.Conn) {
 }
 func main() {
 	c := Makecoordinator()
-	sub, _ := net.Listen("tcp", "127.0.0.1:3333/sub")
+	sub, _ := net.Listen("tcp", "127.0.0.1:8000/sub")
 	pub, _ := net.Listen("tcp", "127.0.0.1:3333/pub")
 	go func() {
 		for {
