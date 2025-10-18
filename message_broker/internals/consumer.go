@@ -14,6 +14,7 @@ type Consumer struct {
 
 func MakeConsumer(topic string) *Consumer {
 	id := os.Getpid()
+	fmt.Println(topic)
 	c := Consumer{id: id, topic: topic}
 	return &c
 }
@@ -24,6 +25,7 @@ func (c *Consumer) Subscribe() {
 		fmt.Println("Error dialing:", err)
 		return
 	}
+	fmt.Println("here")
 	defer conn.Close()
 	_, err = conn.Write([]byte(c.topic + "\n"))
 	if err != nil {
@@ -38,6 +40,7 @@ func (c *Consumer) Subscribe() {
 			fmt.Println("error retrieving msg")
 			break
 		}
-		fmt.Println(data)
+		fmt.Println("here")
+		fmt.Println(string(data))
 	}
 }

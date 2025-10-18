@@ -7,6 +7,6 @@ import (
 
 func main() {
 	arg := os.Args
-	c := internals.MakeConsumer(arg[0])
+	c := internals.MakeConsumer(arg[1])
 	c.Subscribe()
 }

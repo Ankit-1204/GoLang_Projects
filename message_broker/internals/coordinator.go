@@ -3,9 +3,11 @@ package internals
 import (
 	"bufio"
 	"encoding/json"
-	"log"
+	"fmt"
+	"io"
 	"net"
 	"queue/pkg/queue"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -26,14 +28,17 @@ func Deliver(task *queue.Task, q *queue.Queue) {
 	q.Mu.Lock()
 	q.Message = append(q.Message, task)
 	q.Mu.Unlock()
-
 	for {
 		q.Mu.Lock()
 		if len(q.Message) == 0 {
+			q.Mu.Unlock()
 			return
 		}
 		t := q.Message[0]
+		q.Mu.Unlock()
+		fmt.Println(t.Data)
 		_, err := q.Consu.Con.Write(t.Data)
+		q.Mu.Lock()
 		if err == nil {
 			q.Message = q.Message[1:]
 		}
@@ -44,10 +49,24 @@ func Deliver(task *queue.Task, q *queue.Queue) {
 
 func (c *Coordinator) Publish(income queue.Incoming) {
 	topic := income.Topic
-	data := income.Data
-	task := queue.Task{Topic: topic, Status: "pending", Data: data}
-	for _, q := range c.subs[topic] {
-		go Deliver(&task, q)
+	data := string(income.Data) + "\n"
+	c.mu.Lock()
+	fmt.Println(topic)
+	qlist, ok := c.subs[topic]
+	fmt.Println(c.subs)
+	if !ok {
+		sub := make([]*queue.Queue, len(qlist))
+		c.subs[topic] = sub
+	}
+	sublist := make([]*queue.Queue, len(qlist))
+	copy(sublist, qlist)
+	c.mu.Unlock()
+	fmt.Println(qlist)
+	for _, q := range sublist {
+
+		task := &queue.Task{Topic: topic, Status: "pending", Data: []byte(data)}
+		fmt.Println(*task)
+		go Deliver(task, q)
 	}
 
 }
@@ -61,18 +80,34 @@ func (c *Coordinator) Subscribe(topic string, subListener net.Conn) {
 	c.subs[topic] = append(c.subs[topic], &msgQueue)
 
 }
-func main() {
+func Run() {
 	c := Makecoordinator()
-	sub, _ := net.Listen("tcp", "127.0.0.1:8000/sub")
-	pub, _ := net.Listen("tcp", "127.0.0.1:3333/pub")
+	sub, err := net.Listen("tcp", "127.0.0.1:8000")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	pub, err := net.Listen("tcp", "127.0.0.1:3333")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("here")
 	go func() {
 		for {
 			subListener, _ := sub.Accept()
 			// sub will hold till it recieves request
 			go func(sublistener net.Conn) {
-				subReader := bufio.NewReader(subListener)
+				subReader := bufio.NewReader(sublistener)
 				// basically \n so that it listens until first delim (line here)
-				topic, _ := subReader.ReadString('\n')
+
+				topic, err := subReader.ReadString('\n')
+				if err == io.EOF {
+					fmt.Println("conn lost sub")
+					return
+				}
+				topic = strings.TrimSuffix(topic, "\n")
+				fmt.Println(topic)
 				c.Subscribe(topic, sublistener)
 				scanner := bufio.NewScanner(sublistener)
 				for scanner.Scan() {
@@ -84,14 +119,21 @@ func main() {
 		for {
 			pubListener, _ := pub.Accept()
 			go func(pubListener net.Conn) {
-				pubReader := bufio.NewReader(pubListener)
-				data, _ := pubReader.ReadBytes('\n')
-				var income queue.Incoming
-				err := json.Unmarshal(data, &income)
-				if err != nil {
-					log.Panic(err)
+				for {
+					pubReader := bufio.NewReader(pubListener)
+					data, err := pubReader.ReadBytes('\n')
+					if err == io.EOF {
+						fmt.Println("conn lost pub")
+						return
+					}
+					var income queue.Incoming
+					err = json.Unmarshal(data, &income)
+					if err != nil {
+						fmt.Println(err)
+						break
+					}
+					c.Publish(income)
 				}
-				c.Publish(income)
 			}(pubListener)
 		}
 	}()
