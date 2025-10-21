@@ -17,9 +17,9 @@ type Consumer struct {
 }
 type Queue struct {
 	Id      string
-	Mu      sync.Mutex
-	Consu   *Consumer
-	Message []*Task
+	Mu      sync.RWMutex
+	Consu   []chan *Incoming
+	Message chan *Incoming
 	Topic   string
 }
 

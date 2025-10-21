@@ -14,70 +14,61 @@ import (
 )
 
 type Coordinator struct {
-	subs map[string][]*queue.Queue
+	subs map[string]*queue.Queue
 	mu   sync.Mutex
 }
 
 func Makecoordinator() *Coordinator {
 	c := Coordinator{}
-	c.subs = make(map[string][]*queue.Queue)
+	c.subs = make(map[string]*queue.Queue)
 	return &c
 }
 
-func Deliver(task *queue.Task, q *queue.Queue) {
-	q.Mu.Lock()
-	q.Message = append(q.Message, task)
-	q.Mu.Unlock()
-	for {
-		q.Mu.Lock()
-		if len(q.Message) == 0 {
-			q.Mu.Unlock()
-			return
+func (c *Coordinator) Deliver(topic string) {
+	for msg := range c.subs[topic].Message {
+		// not locked since .Message is a channel
+		c.subs[topic].Mu.Lock()
+		for _, consumer := range c.subs[topic].Consu {
+			select {
+			case consumer <- msg:
+			default:
+			}
 		}
-		t := q.Message[0]
-		q.Mu.Unlock()
-		fmt.Println(t.Data)
-		_, err := q.Consu.Con.Write(t.Data)
-		q.Mu.Lock()
-		if err == nil {
-			q.Message = q.Message[1:]
-		}
-		q.Mu.Unlock()
+		c.subs[topic].Mu.Unlock()
 	}
-
 }
 
 func (c *Coordinator) Publish(income queue.Incoming) {
 	topic := income.Topic
-	data := string(income.Data) + "\n"
 	c.mu.Lock()
-	fmt.Println(topic)
-	qlist, ok := c.subs[topic]
-	fmt.Println(c.subs)
-	if !ok {
-		sub := make([]*queue.Queue, len(qlist))
-		c.subs[topic] = sub
-	}
-	sublist := make([]*queue.Queue, len(qlist))
-	copy(sublist, qlist)
+	_, ok := c.subs[topic]
 	c.mu.Unlock()
-	fmt.Println(qlist)
-	for _, q := range sublist {
-
-		task := &queue.Task{Topic: topic, Status: "pending", Data: []byte(data)}
-		fmt.Println(*task)
-		go Deliver(task, q)
+	if !ok {
+		uid := uuid.New().String()
+		msgQueue := queue.Queue{Id: uid, Consu: make([]chan *queue.Incoming, 0), Message: make(chan *queue.Incoming, 50), Topic: topic}
+		c.mu.Lock()
+		c.subs[topic] = &msgQueue
+		c.mu.Unlock()
+		go c.Deliver(income.Topic)
 	}
+	c.subs[topic].Message <- &income
 
 }
-func (c *Coordinator) Subscribe(topic string, subListener net.Conn) {
-	consumer := queue.Consumer{Con: subListener, Topic: topic}
-	uid := uuid.New().String()
-	msgList := make([]*queue.Task, 0)
-	msgQueue := queue.Queue{Id: uid, Consu: &consumer, Message: msgList, Topic: topic}
+func (c *Coordinator) Subscribe(topic string) chan *queue.Incoming {
+	conChan := make(chan *queue.Incoming, 10)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.subs[topic] = append(c.subs[topic], &msgQueue)
+	_, ok := c.subs[topic]
+	if !ok {
+		uid := uuid.New().String()
+		msgQueue := queue.Queue{Id: uid, Consu: make([]chan *queue.Incoming, 0), Message: make(chan *queue.Incoming, 50), Topic: topic}
+
+		c.subs[topic] = &msgQueue
+
+		go c.Deliver(topic)
+	}
+	c.subs[topic].Consu = append(c.subs[topic].Consu, conChan)
+	c.mu.Unlock()
+	return conChan
 
 }
 func Run() {
@@ -108,9 +99,10 @@ func Run() {
 				}
 				topic = strings.TrimSuffix(topic, "\n")
 				fmt.Println(topic)
-				c.Subscribe(topic, sublistener)
-				scanner := bufio.NewScanner(sublistener)
-				for scanner.Scan() {
+				lchannel := c.Subscribe(topic)
+
+				for msg := range lchannel {
+					sublistener.Write(msg.Data)
 				}
 			}(subListener)
 		}
@@ -119,8 +111,9 @@ func Run() {
 		for {
 			pubListener, _ := pub.Accept()
 			go func(pubListener net.Conn) {
+				defer pubListener.Close()
+				pubReader := bufio.NewReader(pubListener)
 				for {
-					pubReader := bufio.NewReader(pubListener)
 					data, err := pubReader.ReadBytes('\n')
 					if err == io.EOF {
 						fmt.Println("conn lost pub")
@@ -133,6 +126,7 @@ func Run() {
 						break
 					}
 					c.Publish(income)
+
 				}
 			}(pubListener)
 		}
